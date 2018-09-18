@@ -31,7 +31,10 @@ class Http2Client(object):
 
     def __init__(self, server_url):
         self._server_url = getenv('ORANGE_EMBEDDING_API_URL', server_url)
-        self._server_connection = self._connect_to_server()
+        try:
+            self._server_connection = self._connect_to_server()
+        except:
+            raise ConnectionError
         self._max_concurrent_streams = self._read_max_concurrent_streams()
 
     def reconnect_to_server(self):

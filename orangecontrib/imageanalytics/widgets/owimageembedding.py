@@ -11,13 +11,13 @@ from AnyQt.QtTest import QSignalSpy
 from AnyQt.QtWidgets import QLayout, QPushButton, QStyle
 
 from Orange.data import Table
-from Orange.widgets.gui import hBox
+from Orange.widgets.gui import hBox, lineEdit, checkBox
 from Orange.widgets.gui import widgetBox, widgetLabel, comboBox, auto_commit
 from Orange.widgets.settings import Setting
 from Orange.widgets.utils import concurrent as qconcurrent
 from Orange.widgets.utils.itemmodels import VariableListModel
+from Orange.widgets.widget import OWWidget, Default, Msg
 from Orange.widgets.widget import Input, Output
-from Orange.widgets.widget import OWWidget
 
 from orangecontrib.imageanalytics.image_embedder import ImageEmbedder
 from orangecontrib.imageanalytics.image_embedder import MODELS as EMBEDDERS_INFO
@@ -39,10 +39,21 @@ class OWImageEmbedding(OWWidget):
         embeddings = Output('Embeddings', Table, default=True)
         skipped_images = Output('Skipped Images', Table)
 
+    class Error(OWWidget.Error):
+        cant_connect = Msg(
+            "Not connected. Check internet connection or URL.")
+
+    class Info(OWWidget.Information):
+        connected_info = Msg("Connected to server")
+
     cb_image_attr_current_id = Setting(default=0)
     cb_embedder_current_id = Setting(default=0)
 
     _NO_DATA_INFO_TEXT = "No data on input."
+    SERVER_URL_DEFAULT = "api.garaza.io:443"
+
+    custom_server = Setting(default=False)
+    server_url = Setting(default="")
 
     def __init__(self):
         super().__init__()
@@ -98,6 +109,15 @@ class OWImageEmbedding(OWWidget):
             EMBEDDERS_INFO[current_embedder]['description']
         )
 
+        advanced_box = widgetBox(self.controlArea, 'Custom server')
+        self.use_custom_server_cb = checkBox(
+            advanced_box, self, 'custom_server', "Use private server",
+            callback=self.changed_server_url)
+        self.server_url_box = lineEdit(
+            advanced_box, self, 'server_url', label="Server URL: ",
+            tooltip='The url of the server for calculating image embeddings',
+            orientation=Qt.Horizontal, callback=self.changed_server_url)
+
         self.auto_commit_widget = auto_commit(
             widget=self.controlArea,
             master=self,
@@ -117,11 +137,16 @@ class OWImageEmbedding(OWWidget):
 
     def _init_server_connection(self):
         self.setBlocking(False)
-        self._image_embedder = ImageEmbedder(
-            model=self.embedders[self.cb_embedder_current_id],
-            layer='penultimate'
-        )
+        url = self.server_url if self.custom_server else self.SERVER_URL_DEFAULT
+        try:
+            self._image_embedder = ImageEmbedder(
+                model=self.embedders[self.cb_embedder_current_id],
+                layer='penultimate', server_url=url
+            )
+        except ConnectionError:
+            self._image_embedder = None
         self._set_server_info(
+            self._image_embedder is not None and
             self._image_embedder.is_connected_to_server()
         )
 
@@ -158,6 +183,10 @@ class OWImageEmbedding(OWWidget):
 
     def _cb_image_attr_changed(self):
         self.commit()
+
+    def changed_server_url(self):
+        self._init_server_connection()
+        self.server_url_box.setDisabled(not self.custom_server)
 
     def _cb_embedder_changed(self):
         current_embedder = self.embedders[self.cb_embedder_current_id]
@@ -315,12 +344,12 @@ class OWImageEmbedding(OWWidget):
                     len(self._input_data), num_skipped))
 
     def _set_server_info(self, connected):
-        self.clear_messages()
+        self.Error.clear()
+        self.Info.clear()
         if connected:
-            self.connection_info.setText("Connected to server.")
+            self.Info.connected_info()
         else:
-            self.connection_info.setText("No connection with server.")
-            self.warning("Click Apply to try again.")
+            self.Error.cant_connect()
 
     def onDeleteWidget(self):
         self.cancel()
