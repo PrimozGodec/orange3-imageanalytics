@@ -69,7 +69,7 @@ class OWImageEmbedding(OWWidget):
             self, threadPool=QThreadPool(maxThreadCount=1)
         )
         self.setBlocking(True)
-        QTimer.singleShot(0, self._init_server_connection)
+        QTimer.singleShot(0, self.changed_server_url)
 
     def _setup_layout(self):
         self.controlArea.setMinimumWidth(self.controlArea.sizeHint().width())
